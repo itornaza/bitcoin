@@ -87,7 +87,7 @@ public:
     static constexpr size_t HASHLEN{32};
 
     Sv2CipherState() = default;
-    explicit Sv2CipherState(uint8_t key[HASHLEN]);
+    explicit Sv2CipherState(std::array<uint8_t, HASHLEN> key);
 
     /** Decrypt message
      * @param[in] associated_data associated data
@@ -125,7 +125,7 @@ public:
     [[nodiscard]] bool DecryptMessage(Span<std::byte> ciphertext, Span<std::byte> plain);
 
 private:
-    uint8_t m_key[HASHLEN];
+    std::array<uint8_t, HASHLEN> m_key{0};
     uint64_t m_nonce = 0;
 };
 
@@ -150,10 +150,7 @@ public:
     static constexpr std::array<uint8_t, 32> PROTOCOL_NAME_DOUBLE_HASH = {146, 47, 163, 46, 79, 72, 124, 13, 89, 202, 163, 190, 215, 137, 156, 227,
                                                                           217, 141, 183, 225, 61, 189, 59, 124, 242, 210, 61, 212, 51, 220, 97, 4};
 
-    Sv2SymmetricState()
-    {
-        std::memcpy(m_chaining_key, PROTOCOL_NAME_HASH.data(), PROTOCOL_NAME_HASH.size());
-    }
+    Sv2SymmetricState() : m_chaining_key{PROTOCOL_NAME_HASH}{}
 
     void MixHash(const Span<const std::byte> input);
     void MixKey(const Span<const std::byte> input_key_material);
@@ -168,11 +165,13 @@ public:
     std::string GetChainingKey();
 
 private:
-    uint8_t m_chaining_key[Sv2CipherState::HASHLEN];
+    std::array<uint8_t, Sv2CipherState::HASHLEN> m_chaining_key;
     uint256 m_hash_output = uint256(PROTOCOL_NAME_DOUBLE_HASH);
     Sv2CipherState m_cipher_state;
 
-    void HKDF2(const Span<const std::byte> input_key_material, uint8_t out0[Sv2CipherState::HASHLEN], uint8_t out1[Sv2CipherState::HASHLEN]);
+    void HKDF2(const Span<const std::byte> input_key_material, 
+               std::array<uint8_t, Sv2CipherState::HASHLEN> out0, 
+               std::array<uint8_t, Sv2CipherState::HASHLEN> out1);
 };
 
 /*

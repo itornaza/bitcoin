@@ -62,9 +62,9 @@ void Sv2SignatureNoiseMessage::SignSchnorr(const CKey& authority_key, Span<unsig
     authority_key.SignSchnorr(this->GetHash(), sig, nullptr, {});
 }
 
-Sv2CipherState::Sv2CipherState(uint8_t key[HASHLEN])
+Sv2CipherState::Sv2CipherState(std::array<uint8_t, Sv2CipherState::HASHLEN> key)
 {
-    std::copy(key, key + HASHLEN, m_key);
+    m_key = key;
 }
 
 bool Sv2CipherState::DecryptWithAd(Span<const std::byte> associated_data, Span<std::byte> ciphertext, Span<std::byte> plain)
@@ -175,12 +175,13 @@ void Sv2SymmetricState::MixHash(const Span<const std::byte> input)
 
 void Sv2SymmetricState::MixKey(const Span<const std::byte> input_key_material)
 {
-    uint8_t out0[Sv2CipherState::HASHLEN], out1[Sv2CipherState::HASHLEN];
-
+    std::array<uint8_t, Sv2CipherState::HASHLEN> out0;
+    std::array<uint8_t, Sv2CipherState::HASHLEN> out1;
     HKDF2(input_key_material, out0, out1);
-
-    std::memset(m_chaining_key, 0, sizeof(m_chaining_key));
-    std::copy(out0, out0 + Sv2CipherState::HASHLEN, m_chaining_key);
+    
+    std::fill(m_chaining_key.begin(), m_chaining_key.end(), 0);
+    
+    m_chaining_key = out0;
     m_cipher_state = Sv2CipherState{out1};
 }
 
@@ -194,26 +195,26 @@ void Sv2SymmetricState::LogChainingKey()
     LogTrace(BCLog::SV2, "Chaining key: %s\n", GetChainingKey());
 }
 
-void Sv2SymmetricState::HKDF2(const Span<const std::byte> input_key_material, uint8_t out0[Sv2CipherState::HASHLEN], uint8_t out1[Sv2CipherState::HASHLEN])
+void Sv2SymmetricState::HKDF2(const Span<const std::byte> input_key_material, std::array<uint8_t, Sv2CipherState::HASHLEN> out0, std::array<uint8_t, Sv2CipherState::HASHLEN> out1)
 {
-    uint8_t tmp_key[Sv2CipherState::HASHLEN];
-    CHMAC_SHA256 tmp_mac(m_chaining_key, Sv2CipherState::HASHLEN);
+    std::array<uint8_t, Sv2CipherState::HASHLEN> tmp_key;
+    CHMAC_SHA256 tmp_mac(m_chaining_key.data(), m_chaining_key.size());
     tmp_mac.Write(UCharCast(input_key_material.data()), input_key_material.size());
-    tmp_mac.Finalize(tmp_key);
+    tmp_mac.Finalize(tmp_key.data());
 
-    CHMAC_SHA256 out0_mac(tmp_key, Sv2CipherState::HASHLEN);
+    CHMAC_SHA256 out0_mac(tmp_key.data(), tmp_key.size());
     uint8_t one[1]{0x1};
     out0_mac.Write(one, 1);
-    out0_mac.Finalize(out0);
+    out0_mac.Finalize(out0.data());
 
     std::vector<uint8_t> in1;
     in1.reserve(Sv2CipherState::HASHLEN + 1);
-    std::copy(out0, out0 + Sv2CipherState::HASHLEN, std::back_inserter(in1));
+    std::copy(out0.begin(), out0.end(), in1.begin());
     in1.push_back(0x02);
 
-    CHMAC_SHA256 out1_mac(tmp_key, Sv2CipherState::HASHLEN);
+    CHMAC_SHA256 out1_mac(tmp_key.data(), tmp_key.size());
     out1_mac.Write(&in1[0], in1.size());
-    out1_mac.Finalize(out1);
+    out1_mac.Finalize(out1.data());
 }
 
 bool Sv2SymmetricState::EncryptAndHash(Span<const std::byte> plain, Span<std::byte> ciphertext)
@@ -244,8 +245,8 @@ bool Sv2SymmetricState::DecryptAndHash(Span<std::byte> ciphertext, Span<std::byt
 
 std::array<Sv2CipherState, 2> Sv2SymmetricState::Split()
 {
-    uint8_t send_key[Sv2CipherState::HASHLEN], recv_key[Sv2CipherState::HASHLEN];
-
+    std::array<uint8_t, Sv2CipherState::HASHLEN> send_key;
+    std::array<uint8_t, Sv2CipherState::HASHLEN> recv_key;
     std::vector<std::byte> empty;
     HKDF2(empty, send_key, recv_key);
 
